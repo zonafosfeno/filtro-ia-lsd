@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LSD AR Experience</title>
+<style>
+  :root {
+    --neon-pink: #ff00ff;
+    --neon-cyan: #00ffff;
+    --neon-green: #00ff88;
+    --neon-yellow: #ffff00;
+    --dark-bg: #0a0010;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--dark-bg);
+    color: #fff;
+    font-family: 'Courier New', monospace;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  @keyframes hueRotate {
+    0% { filter: hue-rotate(0deg); }
+    100% { filter: hue-rotate(360deg); }
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.7; transform: scale(1.05); }
+  }
+  @keyframes recordBlink {
+    0%, 100% { background: #ff0040; box-shadow: 0 0 20px #ff0040; }
+    50% { background: #800020; box-shadow: 0 0 5px #800020; }
+  }
+  @keyframes scanline {
+    0% { transform: translateY(-100%); }
+    100% { transform: translateY(100vh); }
+  }
+  @keyframes titleGlow {
+    0%, 100% { text-shadow: 0 0 10px var(--neon-pink), 0 0 30px var(--neon-pink), 0 0 60px var(--neon-pink); }
+    50% { text-shadow: 0 0 10px var(--neon-cyan), 0 0 30px var(--neon-cyan), 0 0 60px var(--neon-cyan); }
+  }
+  @keyframes borderRainbow {
+    0% { border-color: #ff0080; }
+    16% { border-color: #ff8000; }
+    33% { border-color: #ffff00; }
+    50% { border-color: #00ff80; }
+    66% { border-color: #0080ff; }
+    83% { border-color: #8000ff; }
+    100% { border-color: #ff0080; }
+  }
+
+  #app {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px;
+    max-width: 900px;
+    margin: 0 auto;
+  }
+
+  h1 {
+    font-size: clamp(1.5rem, 5vw, 3rem);
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    animation: titleGlow 2s ease-in-out infinite, hueRotate 8s linear infinite;
+    margin-bottom: 8px;
+  }
+
+  #subtitle {
+    font-size: 0.75rem;
+    letter-spacing: 0.5em;
+    color: var(--neon-cyan);
+    opacity: 0.7;
+    margin-bottom: 20px;
+  }
+
+  #canvas-container {
+    position: relative;
+    width: 100%;
+    max-width: 720px;
+    border: 3px solid var(--neon-pink);
+    animation: borderRainbow 3s linear infinite;
+    border-radius: 4px;
+    overflow: hidden;
+    background: #000;
+  }
+
+  #canvas-container::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: rgba(255,255,255,0.15);
+    animation: scanline 4s linear infinite;
+    z-index: 10;
+    pointer-events: none;
+  }
+
+  #outputCanvas {
+    width: 100%;
+    display: block;
+  }
+
+  #video { display: none; }
+
+  #rec-badge {
+    display: none;
+    position: absolute;
+    top: 12px; left: 12px;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: bold;
+    letter-spacing: 0.15em;
+    animation: recordBlink 1s ease-in-out infinite;
+    z-index: 20;
+  }
+
+  #status {
+    margin: 12px 0;
+    font-size: 0.8rem;
+    color: var(--neon-green);
+    letter-spacing: 0.1em;
+    min-height: 20px;
+    text-align: center;
+  }
+
+  #controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: center;
+    margin-bottom: 16px;
+    width: 100%;
+    max-width: 720px;
+  }
+
+  button {
+    background: transparent;
+    border: 2px solid;
+    color: inherit;
+    padding: 10px 18px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.8rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    cursor: pointer;
+    border-radius: 3px;
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+    flex: 1;
+    min-width: 130px;
+  }
+
+  button::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: currentColor;
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+  button:hover::before { opacity: 0.15; }
+  button:active::before { opacity: 0.3; }
+  button:disabled { opacity: 0.3; cursor: not-allowed; }
+
+  #btnCamera { border-color: var(--neon-cyan); color: var(--neon-cyan); }
+  #btnFilter { border-color: var(--neon-pink); color: var(--neon-pink); }
+  #btnRecord { border-color: #ff0040; color: #ff0040; }
+  #btnSave   { border-color: var(--neon-green); color: var(--neon-green); }
+
+  #btnCamera.active  { background: rgba(0,255,255,0.15); box-shadow: 0 0 15px var(--neon-cyan); }
+  #btnFilter.active  { background: rgba(255,0,255,0.15); box-shadow: 0 0 15px var(--neon-pink); animation: pulse 1.5s ease-in-out infinite; }
+  #btnRecord.recording { background: rgba(255,0,64,0.2); box-shadow: 0 0 15px #ff0040; }
+
+  #intensity-wrap {
+    width: 100%;
+    max-width: 720px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  #intensity-wrap label {
+    font-size: 0.75rem;
+    color: var(--neon-yellow);
+    letter-spacing: 0.1em;
+    white-space: nowrap;
+  }
+
+  input[type=range] {
+    flex: 1;
+    -webkit-appearance: none;
+    height: 4px;
+    background: linear-gradient(90deg, var(--neon-pink), var(--neon-cyan));
+    border-radius: 2px;
+    outline: none;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 0 8px var(--neon-pink);
+    cursor: pointer;
+  }
+
+  #intensity-val {
+    font-size: 0.75rem;
+    color: var(--neon-yellow);
+    width: 30px;
+    text-align: right;
+  }
+
+  #fps-display {
+    font-size: 0.65rem;
+    color: rgba(255,255,255,0.3);
+    letter-spacing: 0.05em;
+    align-self: flex-end;
+  }
+
+  #info {
+    font-size: 0.65rem;
+    color: rgba(255,255,255,0.25);
+    text-align: center;
+    margin-top: 10px;
+    letter-spacing: 0.05em;
+  }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <h1>LSD AR</h1>
+  <div id="subtitle">NEURAL PSYCHEDELIC ENGINE v1.0</div>
+
+  <div id="canvas-container">
+    <div id="rec-badge">⬤ REC</div>
+    <canvas id="outputCanvas"></canvas>
+  </div>
+
+  <div id="status">[ SISTEMA LISTO — ACTIVA LA CÁMARA ]</div>
+
+  <div id="controls">
+    <button id="btnCamera">▶ Cámara</button>
+    <button id="btnFilter" disabled>◈ Filtro LSD</button>
+    <button id="btnRecord" disabled>⬤ Grabar</button>
+    <button id="btnSave"   disabled>⬇ Guardar</button>
+  </div>
+
+  <div id="intensity-wrap">
+    <label>INTENSIDAD LSD:</label>
+    <input type="range" id="intensitySlider" min="1" max="10" value="5">
+    <span id="intensity-val">5</span>
+  </div>
+
+  <div id="fps-display">FPS: --</div>
+  <div id="info">Funciona en Chrome/Firefox/Safari · Requiere permiso de cámara · Exporta en WebM</div>
+</div>
+
+<video id="video" playsinline autoplay muted></video>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/body-pix@2.2.0/dist/body-pix.min.js"></script>
+
+<script>
+// ─── STATE ────────────────────────────────────────────────────────────────────
+const state = {
+  cameraActive: false,
+  filterActive: false,
+  recording: false,
+  bodyPixReady: false,
+  bodyPixNet: null,
+  useBodyPix: true,
+  stream: null,
+  mediaRecorder: null,
+  recordedChunks: [],
+  animFrameId: null,
+  lastFrameTime: 0,
+  fps: 0,
+  fpsFrames: 0,
+  fpsTimer: 0,
+  intensity: 5,
+  time: 0,
+};
+
+// ─── ELEMENTS ─────────────────────────────────────────────────────────────────
+const video     = document.getElementById('video');
+const canvas    = document.getElementById('outputCanvas');
+const ctx       = canvas.getContext('2d', { willReadFrequently: true });
+const btnCamera = document.getElementById('btnCamera');
+const btnFilter = document.getElementById('btnFilter');
+const btnRecord = document.getElementById('btnRecord');
+const btnSave   = document.getElementById('btnSave');
+const recBadge  = document.getElementById('rec-badge');
+const statusEl  = document.getElementById('status');
+const fpsEl     = document.getElementById('fps-display');
+const slider    = document.getElementById('intensitySlider');
+const intensVal = document.getElementById('intensity-val');
+
+// ─── STATUS ───────────────────────────────────────────────────────────────────
+function setStatus(msg) { statusEl.textContent = '[ ' + msg + ' ]'; }
+
+// ─── BODYPIX INIT ─────────────────────────────────────────────────────────────
+async function initBodyPix() {
+  setStatus('CARGANDO MODELO IA...');
+  try {
+    state.bodyPixNet = await bodyPix.load({
+      architecture: 'MobileNetV1',
+      outputStride: 16,
+      multiplier: 0.5,
+      quantBytes: 2,
+    });
+    state.bodyPixReady = true;
+    setStatus('MODELO IA CARGADO ✓');
+  } catch (e) {
+    console.warn('BodyPix failed:', e);
+    state.useBodyPix = false;
+    setStatus('IA NO DISPONIBLE — MODO FALLBACK ACTIVO');
+  }
+}
+
+// ─── CAMERA ───────────────────────────────────────────────────────────────────
+async function startCamera() {
+  try {
+    setStatus('SOLICITANDO ACCESO A CÁMARA...');
+    const constraints = {
+      video: {
+        facingMode: 'environment',
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+      },
+      audio: false,
+    };
+    // Try environment first, fallback to any
+    try {
+      state.stream = await navigator.mediaDevices.getUserMedia(constraints);
+    } catch {
+      state.stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    }
+    video.srcObject = state.stream;
+    await new Promise(r => { video.onloadedmetadata = r; });
+    canvas.width  = video.videoWidth  || 640;
+    canvas.height = video.videoHeight || 480;
+    state.cameraActive = true;
+    btnCamera.textContent = '■ Detener';
+    btnCamera.classList.add('active');
+    btnFilter.disabled = false;
+    btnRecord.disabled = false;
+    setStatus('CÁMARA ACTIVA — ' + canvas.width + 'x' + canvas.height);
+    startLoop();
+    if (!state.bodyPixReady && state.useBodyPix) await initBodyPix();
+  } catch (err) {
+    setStatus('ERROR DE CÁMARA: ' + err.message);
+  }
+}
+
+function stopCamera() {
+  if (state.recording) stopRecording();
+  cancelAnimationFrame(state.animFrameId);
+  if (state.stream) state.stream.getTracks().forEach(t => t.stop());
+  state.stream = null;
+  state.cameraActive = false;
+  state.filterActive = false;
+  btnCamera.textContent = '▶ Cámara';
+  btnCamera.classList.remove('active');
+  btnFilter.textContent = '◈ Filtro LSD';
+  btnFilter.classList.remove('active');
+  btnFilter.disabled = true;
+  btnRecord.disabled = true;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  setStatus('CÁMARA DETENIDA');
+}
+
+// ─── LSD EFFECTS ──────────────────────────────────────────────────────────────
+let segmentationCache = null;
+let segFrameCount = 0;
+
+async function getSegmentation() {
+  if (!state.bodyPixReady || !state.bodyPixNet) return null;
+  // Run segmentation every 3 frames for perf
+  if (segFrameCount % 3 !== 0) return segmentationCache;
+  segFrameCount++;
+  try {
+    segmentationCache = await state.bodyPixNet.segmentPerson(video, {
+      internalResolution: 'low',
+      segmentationThreshold: 0.5,
+      maxDetections: 3,
+    });
+    return segmentationCache;
+  } catch { return null; }
+}
+
+function applyLSDEffect(imageData, seg, intensity, t) {
+  const data = imageData.data;
+  const w = imageData.width;
+  const h = imageData.height;
+  const intv = intensity / 10;
+
+  // Per-pixel effect
+  for (let i = 0; i < data.length; i += 4) {
+    const pixIdx = i / 4;
+    const px = pixIdx % w;
+    const py = Math.floor(pixIdx / w);
+
+    // Is this pixel body or background?
+    let isBody = false;
+    if (seg && seg.data) {
+      isBody = seg.data[pixIdx] === 1;
+    }
+
+    let r = data[i];
+    let g = data[i + 1];
+    let b = data[i + 2];
+
+    // Time-based wave parameters
+    const wave1 = Math.sin(t * 2.1 + px * 0.04 + py * 0.03);
+    const wave2 = Math.cos(t * 1.7 + py * 0.05 - px * 0.02);
+    const wave3 = Math.sin(t * 3.3 + (px + py) * 0.025);
+
+    if (isBody) {
+      // Body: strong hue shift + channel rotation
+      const hshift = (wave1 * 180 * intv) | 0;
+      const [hR, hG, hB] = hueShiftRGB(r, g, b, hshift);
+      r = hR; g = hG; b = hB;
+
+      // Solarize on high intensity
+      if (intv > 0.6) {
+        if (r > 128) r = 255 - r;
+        if (g > 100 + (wave2 * 30 | 0)) g = 255 - g;
+      }
+
+      // Channel swap flicker
+      if (Math.sin(t * 7 + pixIdx * 0.001) > 0.7 * (1 - intv + 0.1)) {
+        [r, b] = [b, r];
+      }
+    } else {
+      // Background: liquid rainbow
+      const hue = ((t * 60 + px * 0.5 + py * 0.3 + wave3 * 40 * intv) % 360 + 360) % 360;
+      const [lr, lg, lb] = hslToRgb(hue / 360, 0.9, 0.5);
+      // Blend with original
+      const blendFactor = 0.5 + 0.5 * intv;
+      r = (r * (1 - blendFactor) + lr * blendFactor) | 0;
+      g = (g * (1 - blendFactor) + lg * blendFactor) | 0;
+      b = (b * (1 - blendFactor) + lb * blendFactor) | 0;
+    }
+
+    // Global sinusoidal color distortion
+    r = clamp(r + (wave1 * 60 * intv) | 0);
+    g = clamp(g + (wave2 * 50 * intv) | 0);
+    b = clamp(b + (wave3 * 70 * intv) | 0);
+
+    data[i]     = r;
+    data[i + 1] = g;
+    data[i + 2] = b;
+  }
+
+  // RGB channel shift (chromatic aberration)
+  applyChannelShift(data, w, h, Math.floor(8 * intv));
+
+  // Intermittent pixelation
+  if (Math.sin(t * 4.3) > 0.6 + (1 - intv) * 0.3) {
+    const blockSize = 4 + Math.floor(intv * 12);
+    pixelate(data, w, h, blockSize);
+  }
+
+  return imageData;
+}
+
+// Fallback effect (no BodyPix)
+function applyFallbackLSD(imageData, intensity, t) {
+  const data = imageData.data;
+  const w = imageData.width;
+  const h = imageData.height;
+  const intv = intensity / 10;
+
+  for (let i = 0; i < data.length; i += 4) {
+    const px = (i / 4) % w;
+    const py = Math.floor((i / 4) / w);
+
+    const wave1 = Math.sin(t * 2 + px * 0.03 + py * 0.02);
+    const wave2 = Math.cos(t * 1.5 + py * 0.04 - px * 0.015);
+    const wave3 = Math.sin(t * 4 + (px + py) * 0.02);
+
+    let r = data[i];
+    let g = data[i + 1];
+    let b = data[i + 2];
+
+    // Full-screen hue rotation
+    const hshift = (wave1 * 150 * intv) | 0;
+    [r, g, b] = hueShiftRGB(r, g, b, hshift);
+
+    r = clamp(r + (wave2 * 80 * intv) | 0);
+    g = clamp(g + (wave3 * 60 * intv) | 0);
+    b = clamp(b + (wave1 * 90 * intv) | 0);
+
+    if (intv > 0.5 && wave3 > 0.6) r = 255 - r;
+
+    data[i] = r; data[i + 1] = g; data[i + 2] = b;
+  }
+
+  applyChannelShift(data, w, h, Math.floor(6 * intv));
+  if (Math.sin(t * 3.7) > 0.65) {
+    pixelate(data, w, h, 3 + Math.floor(intv * 8));
+  }
+  return imageData;
+}
+
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
+function clamp(v) { return v < 0 ? 0 : v > 255 ? 255 : v; }
+
+function hueShiftRGB(r, g, b, deg) {
+  const rad = deg * Math.PI / 180;
+  const cos = Math.cos(rad), sin = Math.sin(rad);
+  const nr = clamp((0.213 + cos * 0.787 - sin * 0.213) * r + (0.715 - cos * 0.715 - sin * 0.715) * g + (0.072 - cos * 0.072 + sin * 0.928) * b);
+  const ng = clamp((0.213 - cos * 0.213 + sin * 0.143) * r + (0.715 + cos * 0.285 + sin * 0.140) * g + (0.072 - cos * 0.072 - sin * 0.283) * b);
+  const nb = clamp((0.213 - cos * 0.213 - sin * 0.787) * r + (0.715 - cos * 0.715 + sin * 0.715) * g + (0.072 + cos * 0.928 + sin * 0.072) * b);
+  return [nr, ng, nb];
+}
+
+function hslToRgb(h, s, l) {
+  let r, g, b;
+  if (s === 0) { r = g = b = l; } else {
+    const hue2rgb = (p, q, t) => {
+      if (t < 0) t += 1; if (t > 1) t -= 1;
+      if (t < 1/6) return p + (q - p) * 6 * t;
+      if (t < 1/2) return q;
+      if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+      return p;
+    };
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+    r = hue2rgb(p, q, h + 1/3);
+    g = hue2rgb(p, q, h);
+    b = hue2rgb(p, q, h - 1/3);
+  }
+  return [r * 255 | 0, g * 255 | 0, b * 255 | 0];
+}
+
+function applyChannelShift(data, w, h, shift) {
+  if (shift < 1) return;
+  const tmp = new Uint8ClampedArray(data);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4;
+      const ri = (y * w + Math.min(x + shift, w - 1)) * 4;
+      const bi = (y * w + Math.max(x - shift, 0)) * 4;
+      data[i]     = tmp[ri];      // R shifted right
+      data[i + 2] = tmp[bi + 2];  // B shifted left
+    }
+  }
+}
+
+function pixelate(data, w, h, block) {
+  for (let y = 0; y < h; y += block) {
+    for (let x = 0; x < w; x += block) {
+      const ci = (y * w + x) * 4;
+      const avg = [data[ci], data[ci+1], data[ci+2]];
+      for (let dy = 0; dy < block && y + dy < h; dy++) {
+        for (let dx = 0; dx < block && x + dx < w; dx++) {
+          const pi = ((y + dy) * w + (x + dx)) * 4;
+          data[pi] = avg[0]; data[pi+1] = avg[1]; data[pi+2] = avg[2];
+        }
+      }
+    }
+  }
+}
+
+// ─── RENDER LOOP ──────────────────────────────────────────────────────────────
+async function loop(timestamp) {
+  if (!state.cameraActive) return;
+  state.animFrameId = requestAnimationFrame(loop);
+
+  // FPS counter
+  state.fpsFrames++;
+  if (timestamp - state.fpsTimer >= 1000) {
+    state.fps = state.fpsFrames;
+    state.fpsFrames = 0;
+    state.fpsTimer = timestamp;
+    fpsEl.textContent = 'FPS: ' + state.fps;
+  }
+
+  if (video.readyState < 2) return;
+
+  // Draw raw video first
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+  if (!state.filterActive) return;
+
+  state.time += 0.016;
+  const t = state.time;
+  const intensity = state.intensity;
+
+  if (state.useBodyPix && state.bodyPixReady) {
+    const seg = await getSegmentation();
+    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const processed = applyLSDEffect(imgData, seg, intensity, t);
+    ctx.putImageData(processed, 0, 0);
+  } else {
+    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const processed = applyFallbackLSD(imgData, intensity, t);
+    ctx.putImageData(processed, 0, 0);
+  }
+
+  // Overlay vignette + scanlines for cyberpunk feel
+  drawOverlay(t);
+}
+
+function drawOverlay(t) {
+  // Vignette
+  const gradient = ctx.createRadialGradient(
+    canvas.width/2, canvas.height/2, canvas.height * 0.3,
+    canvas.width/2, canvas.height/2, canvas.height * 0.8
+  );
+  gradient.addColorStop(0, 'rgba(0,0,0,0)');
+  gradient.addColorStop(1, 'rgba(0,0,0,0.5)');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Scanlines
+  ctx.fillStyle = 'rgba(0,0,0,0.07)';
+  for (let y = 0; y < canvas.height; y += 3) {
+    ctx.fillRect(0, y, canvas.width, 1);
+  }
+
+  // Moving color fringe on edges
+  const alpha = 0.15 + Math.abs(Math.sin(t)) * 0.15;
+  const hue = (t * 30) % 360;
+  ctx.strokeStyle = `hsla(${hue}, 100%, 70%, ${alpha})`;
+  ctx.lineWidth = 3;
+  ctx.strokeRect(0, 0, canvas.width, canvas.height);
+}
+
+function startLoop() {
+  if (state.animFrameId) cancelAnimationFrame(state.animFrameId);
+  state.fpsTimer = performance.now();
+  state.fpsFrames = 0;
+  requestAnimationFrame(loop);
+}
+
+// ─── RECORDING ────────────────────────────────────────────────────────────────
+function startRecording() {
+  state.recordedChunks = [];
+  const stream = canvas.captureStream(30);
+
+  const mimeTypes = [
+    'video/webm;codecs=vp9',
+    'video/webm;codecs=vp8',
+    'video/webm',
+    'video/mp4',
+  ];
+  let mimeType = '';
+  for (const m of mimeTypes) {
+    if (MediaRecorder.isTypeSupported(m)) { mimeType = m; break; }
+  }
+
+  state.mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
+  state.mediaRecorder.ondataavailable = e => {
+    if (e.data.size > 0) state.recordedChunks.push(e.data);
+  };
+  state.mediaRecorder.onstop = () => {
+    btnSave.disabled = false;
+    setStatus('GRABACIÓN LISTA — PULSA GUARDAR');
+  };
+  state.mediaRecorder.start(100); // timeslice 100ms
+  state.recording = true;
+  recBadge.style.display = 'block';
+  btnRecord.textContent = '■ Detener REC';
+  btnRecord.classList.add('recording');
+  setStatus('GRABANDO... ' + (mimeType || 'webm'));
+}
+
+function stopRecording() {
+  if (!state.recording) return;
+  state.mediaRecorder.stop();
+  state.recording = false;
+  recBadge.style.display = 'none';
+  btnRecord.textContent = '⬤ Grabar';
+  btnRecord.classList.remove('recording');
+}
+
+function saveRecording() {
+  if (!state.recordedChunks.length) return;
+  const blob = new Blob(state.recordedChunks, { type: state.recordedChunks[0].type || 'video/webm' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  const ts   = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  a.href     = url;
+  a.download = `lsd-ar-${ts}.webm`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+  setStatus('VIDEO DESCARGADO: lsd-ar-' + ts + '.webm');
+}
+
+// ─── BUTTONS ──────────────────────────────────────────────────────────────────
+btnCamera.addEventListener('click', () => {
+  if (state.cameraActive) stopCamera();
+  else startCamera();
+});
+
+btnFilter.addEventListener('click', () => {
+  state.filterActive = !state.filterActive;
+  btnFilter.classList.toggle('active', state.filterActive);
+  btnFilter.textContent = state.filterActive ? '◈ Filtro ON' : '◈ Filtro LSD';
+  setStatus(state.filterActive
+    ? (state.useBodyPix && state.bodyPixReady ? 'FILTRO LSD + IA ACTIVO' : 'FILTRO LSD ACTIVO (modo fallback)')
+    : 'FILTRO DESACTIVADO');
+});
+
+btnRecord.addEventListener('click', () => {
+  if (state.recording) stopRecording();
+  else startRecording();
+});
+
+btnSave.addEventListener('click', saveRecording);
+
+slider.addEventListener('input', () => {
+  state.intensity = parseInt(slider.value);
+  intensVal.textContent = state.intensity;
+});
+
+// Start without AI if TF not available after 5s
+setTimeout(() => {
+  if (!state.bodyPixReady) {
+    state.useBodyPix = false;
+    console.log('TF/BodyPix timeout — using fallback');
+  }
+}, 15000);
+</script>
+</body>
+</html>
